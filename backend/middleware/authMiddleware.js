@@ -16,7 +16,7 @@ exports.verifyToken = async (req, res, next) => {
       return res.status(403).json({ message: 'Invalid or expired token.' });
     }
 
-    req.user = { id: user._id, role: user.role };
+    req.user = { id: user._id, role: user.role.toLowerCase() }; // Attach user info to request object
     next();
   } catch (error) {
     res.status(500).json({ message: 'Error validating token', error: error.message });

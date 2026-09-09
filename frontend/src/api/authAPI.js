@@ -10,6 +10,9 @@ export const authApi = {
   // POST /auth/verify-otp
   verifyOtp: (data) => api.post('/auth/verify-otp', data), // { email, otp }
 
+  // POST /auth/reset-password  <-- ADD THIS LINE
+  resetPassword: (data) => api.post('/auth/reset-password', data), // { email, newPassword }
+
   // POST /auth/register
   register: (data) => api.post('/auth/register', data), // { email, name, role, password }
 };

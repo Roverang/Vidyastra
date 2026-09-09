@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import ReCAPTCHA from 'react-google-recaptcha';
 import { authApi } from '../../API/authApi';
-import nitjLogo from '../../../assets/nitj_logo.png'; // Update with your actual image path
+import nitjLogo from '../../../assets/nitj_logo.png';
 
 export default function Login() {
   // Main Auth States
-  const [role, setRole] = useState('Student'); // 'Student' | 'Faculty' | 'Admin'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [captchaToken, setCaptchaToken] = useState(null); // Holds CAPTCHA token
+  const recaptchaRef = useRef(null);
   
   // Forgot Password Flow States
   const [viewMode, setViewMode] = useState('login'); // 'login' | 'forgot_email' | 'forgot_otp' | 'forgot_reset'
@@ -19,9 +21,21 @@ export default function Login() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // REAL BACKEND API: Login Handler
+  // Handle CAPTCHA Verification
+  const handleCaptchaChange = (token) => {
+    setCaptchaToken(token);
+  };
+
+  // AUTOMATIC ROLE-BASED LOGIN HANDLER
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
+
+    // Verify CAPTCHA completion
+    if (!captchaToken) {
+      setMessage('STATUS: Please complete the CAPTCHA verification.');
+      return;
+    }
+
     setLoading(true);
     setMessage('');
 
@@ -29,7 +43,7 @@ export default function Login() {
       const res = await authApi.login({
         email: email.trim(),
         password,
-        role: role.toLowerCase(),
+        captchaToken, // Optionally send to backend for server-side verification
       });
       
       if (res.data?.token) {
@@ -39,7 +53,8 @@ export default function Login() {
         localStorage.setItem('user', JSON.stringify(res.data.user));
       }
 
-      const userRole = (res.data?.user?.role || role).toLowerCase();
+      // Read role automatically from backend response
+      const userRole = (res.data?.role || res.data?.user?.role || '').toLowerCase();
 
       if (userRole === 'admin') {
         window.location.href = '/admin/home';
@@ -52,12 +67,18 @@ export default function Login() {
       console.error('Login Error:', error);
       const errMsg = error.response?.data?.message || 'Invalid email or password. Please try again.';
       setMessage(`STATUS: ${errMsg}`);
+      
+      // Reset CAPTCHA on failed login
+      if (recaptchaRef.current) {
+        recaptchaRef.current.reset();
+      }
+      setCaptchaToken(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // REAL BACKEND API: Send OTP
+  // SEND OTP
   const handleSendOtp = async (e) => {
     e.preventDefault();
     if (!forgotEmail) return;
@@ -78,7 +99,7 @@ export default function Login() {
     }
   };
 
-  // REAL BACKEND API: Verify OTP
+  // VERIFY OTP
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     if (!otpInput) return;
@@ -99,41 +120,47 @@ export default function Login() {
     }
   };
 
-  // REAL BACKEND API: Reset Password
-  const handleResetPasswordSubmit = async (e) => {
-    e.preventDefault();
-    if (newPassword.length < 6) {
-      alert('Password must be at least 6 characters long.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      alert('New Password and Confirm Password do not match!');
-      return;
-    }
+  // RESET PASSWORD
+ const handleResetPasswordSubmit = async (e) => {
+  e.preventDefault();
 
-    setLoading(true);
-    setMessage('');
+  if (!forgotEmail) {
+    setMessage('STATUS: Email is missing. Please start from step 1.');
+    setViewMode('forgot_email');
+    return;
+  }
 
-    try {
-      await authApi.updateProfile({ email: forgotEmail, password: newPassword });
-      alert('Password Reset Successful! You can now sign in with your new password.');
-      
-      setViewMode('login');
-      setEmail(forgotEmail);
-      setPassword(newPassword);
-      setForgotEmail('');
-      setOtpInput('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setMessage('Password reset successful. Please sign in.');
-    } catch (error) {
-      console.error('Reset Password Error:', error);
-      const errMsg = error.response?.data?.message || 'Failed to reset password. Try again.';
-      setMessage(`STATUS: ${errMsg}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (newPassword.length < 6) {
+    alert('Password must be at least 6 characters long.');
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    alert('Passwords do not match!');
+    return;
+  }
+
+  setLoading(true);
+  setMessage('');
+
+  try {
+    const res = await authApi.resetPassword({ 
+      email: forgotEmail, 
+      newPassword: newPassword 
+    });
+    
+    alert('Password reset successfully! Please log in.');
+    setViewMode('login');
+    setEmail(forgotEmail);
+    setPassword('');
+  } catch (error) {
+    console.error('Reset Password Error Details:', error.response?.data);
+    const backendMessage = error.response?.data?.message || 'Failed to reset password. Try again.';
+    setMessage(`STATUS: ${backendMessage}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen flex flex-col bg-[#e9ecef] font-sans text-slate-800">
@@ -143,7 +170,6 @@ export default function Login() {
       {/* Responsive NITJ Header */}
       <header className="bg-[#003b6d] text-white px-4 sm:px-8 py-3">
         <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start space-y-2 sm:space-y-0 sm:space-x-4 max-w-7xl mx-auto text-center sm:text-left">
-          {/* Logo Image */}
           <img 
             src={nitjLogo} 
             alt="NIT Jalandhar Logo" 
@@ -202,37 +228,14 @@ export default function Login() {
           {viewMode === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               
-              {/* Role Selection */}
-              <div>
-                <label className="block text-xs font-bold text-[#003366] mb-1">
-                  Portal Role:
-                </label>
-                <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded border border-gray-300 text-xs font-semibold">
-                  {['Student', 'Faculty', 'Admin'].map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => setRole(item)}
-                      className={`py-1.5 sm:py-1 rounded transition ${
-                        role === item
-                          ? 'bg-[#337ab7] text-white'
-                          : 'text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Username Field */}
               <div>
                 <label className="block text-xs font-bold text-[#003366] mb-1">
-                  Username:
+                  Username / Email:
                 </label>
                 <input
                   type="email"
-                  placeholder="Enter Username"
+                  placeholder="Enter Registered Email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -255,10 +258,19 @@ export default function Login() {
                 />
               </div>
 
+              {/* Google reCAPTCHA Container */}
+              <div className="flex justify-center my-3 scale-90 sm:scale-100">
+                <ReCAPTCHA
+                  ref={recaptchaRef}
+                  sitekey="6LcivLItAAAAAF5yUvY6OnqKebuq1L7W3Skf86H0" // Demo test key (Replace with your actual Google reCAPTCHA site key)
+                  onChange={handleCaptchaChange}
+                />
+              </div>
+
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !captchaToken}
                 className="w-full py-2.5 bg-[#337ab7] hover:bg-[#286090] text-white font-bold text-sm rounded transition disabled:opacity-50 mt-2"
               >
                 {loading ? 'Authenticating...' : 'Login'}
@@ -293,7 +305,7 @@ export default function Login() {
             </form>
           )}
 
-          {/* FORGOT PASSWORD STEP 1 */}
+          {/* FORGOT PASSWORD STEPS REMAIN UNCHANGED */}
           {viewMode === 'forgot_email' && (
             <form onSubmit={handleSendOtp} className="space-y-4">
               <div>
@@ -302,7 +314,7 @@ export default function Login() {
                 </label>
                 <input
                   type="email"
-                  placeholder="Enter Username/Email"
+                  placeholder="Enter Email"
                   value={forgotEmail}
                   onChange={(e) => setForgotEmail(e.target.value)}
                   required
@@ -331,7 +343,6 @@ export default function Login() {
             </form>
           )}
 
-          {/* FORGOT PASSWORD STEP 2 */}
           {viewMode === 'forgot_otp' && (
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <div>
@@ -366,7 +377,6 @@ export default function Login() {
             </form>
           )}
 
-          {/* FORGOT PASSWORD STEP 3 */}
           {viewMode === 'forgot_reset' && (
             <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
               <div>
