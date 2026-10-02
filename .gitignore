@@ -126,3 +126,10 @@ Thumbs.db
 ml-service1/
 frontend1/
 backend1/
+
+
+# =========================
+# Claude Code
+# =========================
+CLAUDE.md
+.claude/
