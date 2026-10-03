@@ -59,7 +59,8 @@ ml-service/utils/__pycache__/
 .cache/
 huggingface/
 transformers_cache/
-models/
+# Downloaded ML model folders (scoped so backend/models/ source stays tracked)
+ml-service/models/
 
 # Paddle
 .paddlex/
