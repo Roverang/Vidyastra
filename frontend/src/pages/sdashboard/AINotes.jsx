@@ -1,80 +1,107 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { studentAPI } from '../../api/studentAPI';
+import { apiErrorMessage } from '../../api/errorMessage';
+import LectureSources from '../../components/LectureSources';
+
+// Tailwind resets element styles, so give the Markdown elements explicit ones.
+// react-markdown escapes raw HTML by default (no rehype-raw), so notes cannot inject markup.
+// react-markdown passes the Markdown AST `node` to components; keep it off the DOM element.
+const withoutNode = (props) => {
+  const rest = { ...props };
+  delete rest.node;
+  return rest;
+};
+
+const styled = (Tag, className, extra = {}) => {
+  const Styled = (props) => <Tag className={className} {...extra} {...withoutNode(props)} />;
+  return Styled;
+};
+
+const MARKDOWN_COMPONENTS = {
+  h1: styled('h1', 'text-lg font-extrabold text-slate-800 mt-1 mb-2'),
+  h2: styled('h2', 'text-sm font-extrabold text-indigo-700 mt-5 mb-2'),
+  h3: styled('h3', 'text-xs font-extrabold text-slate-800 mt-4 mb-1'),
+  p: styled('p', 'text-xs text-slate-700 leading-relaxed my-2'),
+  ul: styled('ul', 'list-disc pl-5 space-y-1 text-xs text-slate-700 my-2'),
+  ol: styled('ol', 'list-decimal pl-5 space-y-1 text-xs text-slate-700 my-2'),
+  li: styled('li', 'leading-relaxed'),
+  strong: styled('strong', 'font-bold text-slate-900'),
+  pre: styled('pre', 'bg-slate-900 text-slate-100 text-[11px] p-3 rounded-xl overflow-x-auto my-2'),
+  // Fenced blocks carry a language-* class and are styled by <pre>; inline code gets a chip
+  code: (props) => (
+    <code
+      {...withoutNode(props)}
+      className={props.className || 'bg-slate-100 text-indigo-700 px-1 py-0.5 rounded text-[11px]'}
+    />
+  ),
+  a: styled('a', 'text-indigo-600 underline', { target: '_blank', rel: 'noreferrer' }),
+};
 
 export default function AINotes() {
-  const [notes, setNotes] = useState([]);
-  const [activeTab, setActiveTab] = useState('All Notes');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [previewNote, setPreviewNote] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [topic, setTopic] = useState('');
+  const [notes, setNotes] = useState(null); // { topic, notes: markdown }
+  const [sources, setSources] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch Notes from Backend on Mount
-  useEffect(() => {
-    fetchNotes();
-  }, []);
+  const handleGenerate = async (e) => {
+    e.preventDefault();
+    if (!topic.trim()) return;
 
-  const fetchNotes = async () => {
     setLoading(true);
     setError(null);
+    setNotes(null);
+    setSources([]);
     try {
-      const response = await studentAPI.getNotes();
-      const fetchedNotes = response.data?.notes || response.notes || response.data || [];
-      setNotes(fetchedNotes);
+      const res = await studentAPI.generateAiNotes({ topic: topic.trim() });
+      const data = res.data?.data;
+      if (typeof data?.notes !== 'string') {
+        throw new Error(`Invalid response structure from server: ${JSON.stringify(res.data).slice(0, 300)}`);
+      }
+      setNotes(data);
+      setSources(res.data?.sources || []);
     } catch (err) {
-      console.error('Error fetching AI notes:', err);
-      setError('Failed to load notes from the server. Please check your backend connection.');
+      console.error('Error generating AI notes:', err);
+      setError(apiErrorMessage(err, 'AI Notes'));
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleBookmark = async (id) => {
-    // Optimistic UI update
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isBookmarked: !n.isBookmarked } : n))
-    );
-
-    try {
-      await studentAPI.toggleBookmark(id);
-    } catch (err) {
-      console.error('Failed to update bookmark on backend:', err);
-      // Revert if API fails
-      setNotes((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, isBookmarked: !n.isBookmarked } : n))
-      );
-    }
-  };
-
-  const filteredNotes = notes.filter((n) => {
-    const matchesTab = activeTab === 'Bookmarked' ? n.isBookmarked : true;
-    const matchesSearch =
-      n.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.course?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTab && matchesSearch;
-  });
-
   return (
-    <div className="space-y-6 animate-fadeIn relative">
-      
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800">AI Generated Notes</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Automated concise revision notes generated from classroom lectures</p>
-        </div>
+    <div className="space-y-6 animate-fadeIn">
 
-        {/* Search */}
-        <div className="w-full sm:w-72">
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">AI Generated Notes</h2>
+        <p className="text-xs text-slate-500 mt-0.5">Revision notes written from your indexed lectures</p>
+      </div>
+
+      {/* Generator */}
+      <form
+        onSubmit={handleGenerate}
+        className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-3 sm:items-end"
+      >
+        <div className="flex-1 space-y-1">
+          <label className="text-[11px] font-extrabold uppercase text-indigo-600 tracking-wider">Topic</label>
           <input
             type="text"
-            placeholder="🔍 Search notes by topic..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-600 shadow-xs"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="e.g. Integrity constraints, Referential integrity"
+            required
+            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-600"
           />
         </div>
-      </div>
+        <button
+          type="submit"
+          disabled={loading || !topic.trim()}
+          className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-2xl shadow-md transition active:scale-95 disabled:opacity-50"
+        >
+          {loading ? 'Generating…' : '📑 Generate Notes'}
+        </button>
+      </form>
 
       {error && (
         <div className="p-4 bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold rounded-2xl">
@@ -82,136 +109,23 @@ export default function AINotes() {
         </div>
       )}
 
-      {/* Main Container */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/40 space-y-6">
-        
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-4">
-          {['All Notes', 'Bookmarked'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-2xl text-xs font-bold transition ${
-                activeTab === tab ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-
-        {/* Notes Grid */}
-        {loading ? (
-          <div className="py-16 text-center text-xs font-bold text-slate-400">Loading AI notes from server...</div>
-        ) : filteredNotes.length === 0 ? (
-          <div className="py-16 text-center space-y-3">
-            <div className="text-4xl">📖</div>
-            <p className="text-sm font-bold text-slate-600">No AI notes found.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {filteredNotes.map((note) => (
-              <div
-                key={note.id}
-                className="p-5 rounded-3xl border border-slate-100 bg-slate-50/40 hover:bg-white hover:border-indigo-100 transition shadow-xs hover:shadow-md space-y-4 flex flex-col justify-between"
-              >
-                <div className="space-y-3">
-                  <div className="flex justify-between items-start">
-                    <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-md">
-                      {note.course}
-                    </span>
-                    <button
-                      onClick={() => toggleBookmark(note.id)}
-                      className="text-sm text-slate-400 hover:text-amber-500 transition"
-                    >
-                      {note.isBookmarked ? '⭐' : '☆'}
-                    </button>
-                  </div>
-
-                  <h3 className="text-xs font-bold text-slate-800">{note.title}</h3>
-
-                  <div className="space-y-1.5 bg-white p-3 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-extrabold uppercase text-slate-400">Key Takeaways:</p>
-                    <ul className="space-y-1 text-xs text-slate-600 font-medium">
-                      {note.keyPoints?.map((pt, idx) => (
-                        <li key={idx} className="flex items-start gap-1.5">
-                          <span className="text-indigo-600">•</span>
-                          <span>{pt}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
-                  <button
-                    onClick={() => setPreviewNote(note)}
-                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-2xl shadow-sm transition active:scale-95"
-                  >
-                    Read Full Notes 📑
-                  </button>
-                  <button
-                    onClick={() => alert(`Downloading ${note.title} PDF...`)}
-                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl transition"
-                    title="Download PDF"
-                  >
-                    📥
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-      </div>
-
-      {/* Notes Preview Modal */}
-      {previewNote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-lg p-6 space-y-4 animate-fadeIn">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-800">{previewNote.title}</h3>
-                <p className="text-[11px] text-indigo-600 font-bold">{previewNote.course}</p>
-              </div>
-              <button
-                onClick={() => setPreviewNote(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-sm"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-[350px] overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 text-xs text-slate-700 font-medium leading-relaxed">
-              <p className="font-bold text-slate-900">Summary Overview:</p>
-              <p>These AI notes were automatically compiled from the lecture recording on {previewNote.generatedDate || 'recent class'}.</p>
-              
-              <p className="font-bold text-slate-900 pt-2">Detailed Topics Covered:</p>
-              <ul className="list-disc pl-4 space-y-1">
-                {previewNote.keyPoints?.map((pt, i) => (
-                  <li key={i}>{pt}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setPreviewNote(null)}
-                className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-2xl"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => alert(`Downloading ${previewNote.title} PDF...`)}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-2xl"
-              >
-                Download PDF 📥
-              </button>
-            </div>
-          </div>
+      {loading && (
+        <div className="py-10 text-center text-xs font-bold text-slate-400">
+          Reading your lectures and writing notes…
         </div>
       )}
 
+      {notes && (
+        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/40 space-y-5">
+          <article>
+            <ReactMarkdown components={MARKDOWN_COMPONENTS}>{notes.notes}</ReactMarkdown>
+          </article>
+
+          <div className="pt-3 border-t border-slate-100">
+            <LectureSources sources={sources} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

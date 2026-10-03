@@ -14,10 +14,16 @@ const mlClient = axios.create({
  * Error thrown when the ML service fails; carries the HTTP status to send back to the client.
  */
 class MLServiceError extends Error {
-  constructor(message, status) {
+  /**
+   * @param {string} message - full diagnostic (URL, status, cause)
+   * @param {number} status - HTTP status to send back to the client
+   * @param {string} [detail] - the ML service's own error message, when it sent one
+   */
+  constructor(message, status, detail) {
     super(message);
     this.name = 'MLServiceError';
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -30,7 +36,7 @@ const toMLServiceError = (error, url) => {
   if (error.response) {
     const { status, data } = error.response;
     const detail = typeof data === 'string' ? data : data?.detail || data?.message || JSON.stringify(data);
-    return new MLServiceError(`ML service returned ${status} for ${url}: ${detail}`, status);
+    return new MLServiceError(`ML service returned ${status} for ${url}: ${detail}`, status, detail);
   }
   if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
     return new MLServiceError(`ML service at ${url} timed out after ${ML_TIMEOUT_MS} ms (${error.message})`, 504);
@@ -82,21 +88,29 @@ exports.getAITutorResponseFromML = async ({ message, subject, topic }) => {
 exports.MLServiceError = MLServiceError;
 
 /**
- * Forwards the AI Quiz request to the ML service.
- * @param {Object} payload - Contains subject, topic, difficulty, etc.
- * @returns {Promise<Object>} - The generated quiz data.
+ * Generates a quiz grounded in the indexed lectures relevant to the topic.
+ * @param {{topic: string, subject?: string, difficulty?: string, num_questions?: number, lecture_id?: string}} payload
+ * @returns {Promise<{quiz: {title: string, questions: Array<{question: string, options: string[], correct_index: number, explanation: string}>}, sources: Array}>}
  */
-exports.getAIQuizResponseFromML = async (payload) => {
-  return await postToMLService('/quiz', payload);
+exports.getAIQuizResponseFromML = async ({ topic, subject, difficulty, num_questions, lecture_id }) => {
+  const data = await postToMLService('/quiz', { topic, subject, difficulty, num_questions, lecture_id });
+  if (!data.quiz || !Array.isArray(data.quiz.questions)) {
+    throw new MLServiceError(`Quiz missing in ML service response: ${JSON.stringify(data).slice(0, 500)}`, 502);
+  }
+  return { quiz: data.quiz, sources: Array.isArray(data.sources) ? data.sources : [] };
 };
 
 /**
- * Forwards the AI Notes request to the ML service.
- * @param {Object} payload - Contains subject, topic, or content parameters.
- * @returns {Promise<Object>} - The generated notes content.
+ * Generates Markdown revision notes grounded in the indexed lectures relevant to the topic.
+ * @param {{topic: string, subject?: string, lecture_id?: string}} payload
+ * @returns {Promise<{notes: string, sources: Array}>}
  */
-exports.getAINotesResponseFromML = async (payload) => {
-  return await postToMLService('/notes', payload);
+exports.getAINotesResponseFromML = async ({ topic, subject, lecture_id }) => {
+  const data = await postToMLService('/notes', { topic, subject, lecture_id });
+  if (typeof data.notes !== 'string' || !data.notes.trim()) {
+    throw new MLServiceError(`Notes missing in ML service response: ${JSON.stringify(data).slice(0, 500)}`, 502);
+  }
+  return { notes: data.notes, sources: Array.isArray(data.sources) ? data.sources : [] };
 };
 
 /**
