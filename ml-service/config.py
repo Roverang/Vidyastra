@@ -1,9 +1,18 @@
 import os
 from pathlib import Path
+from typing import Literal
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    LLM_MODEL_NAME: str = "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF"
+    LLM_PROVIDER: Literal["gemini", "ollama"] = "gemini"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_FALLBACK_MODEL: str = "gemini-3.5-flash-lite"
+    LOCAL_LLM_FALLBACK: bool = True
+    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen2.5:3b"
+    LLM_TIMEOUT_SECONDS: int = 120
+
     WHISPER_MODEL_SIZE: str = "base"
     EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
 

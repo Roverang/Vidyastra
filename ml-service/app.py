@@ -1,3 +1,10 @@
+# Use the OS certificate store for TLS (handles HTTPS-inspecting antivirus/proxies).
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
