@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     OCR_CONFIDENCE_THRESHOLD: float = 0.60
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 100
+    # Retrieved chunks farther than this (squared L2 on unit vectors = 2 - 2*cosine) are treated as
+    # unrelated. Chosen from scripts/measure_relevance.py: on-topic best matches 0.52-0.58,
+    # off-topic best matches >= 0.79 (6 chunks / 1 lecture; re-measure as more lectures are indexed).
+    RELEVANCE_MAX_DISTANCE: float = 0.70
 
     BASE_DIR: Path = Path(__file__).resolve().parent
     STORAGE_DIR: Path = BASE_DIR / "storage"

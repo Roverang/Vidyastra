@@ -1,9 +1,9 @@
 from typing import Any, Dict, List, Optional
 from services.vectordb import vectordb_service
 from services.llm import llm_service
+from services.retrieval import to_sources
 
 TOP_K = 4
-EXCERPT_CHARS = 200
 NO_CONTEXT = "(No lecture context was found for this question. Tell the student the indexed lectures do not cover it.)"
 
 
@@ -13,22 +13,18 @@ def _is_specified(value: Optional[str]) -> bool:
 
 def tutor_answer(message: str, subject: Optional[str] = None, topic: Optional[str] = None,
                  lecture_id: Optional[str] = None) -> Dict[str, Any]:
-    search_query = " ".join([message] + [v.strip() for v in (topic, subject) if _is_specified(v)])
-    res = vectordb_service.query(lecture_id, search_query, top_k=TOP_K)
-    docs, metas = res["documents"], res["metadatas"]
+    # Search with the student's message only: appending the UI's subject/topic pulls off-topic
+    # questions under the relevance cut-off (measured in scripts/measure_relevance.py).
+    res = vectordb_service.query(lecture_id, message, top_k=TOP_K)
+    docs = res["documents"]
+
+    focus = " / ".join(v.strip() for v in (subject, topic) if _is_specified(v))
+    user_query = f"{message}\n(Student's selected focus: {focus})" if focus else message
 
     context = "\n\n".join(docs) if docs else NO_CONTEXT
-    reply = llm_service.generate("tutor.txt", context, user_query=message)
+    reply = llm_service.generate("tutor.txt", context, user_query=user_query)
 
-    sources: List[Dict[str, Any]] = [
-        {
-            "lecture_id": (meta or {}).get("lecture_id"),
-            "lecture_title": (meta or {}).get("lecture_title", "Untitled lecture"),
-            "chunk_index": (meta or {}).get("chunk_index"),
-            "excerpt": doc[:EXCERPT_CHARS],
-        }
-        for doc, meta in zip(docs, metas)
-    ]
+    sources: List[Dict[str, Any]] = to_sources(res)  # [] when nothing passed the cut-off
     return {"reply": reply, "sources": sources}
 
 
