@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { authApi } from '../../API/authApi';
+import { authApi } from '../../api/authAPI';
 import nitjLogo from '../../../assets/nitj_logo.png'; // Update with your actual image path
 
 export default function Register() {

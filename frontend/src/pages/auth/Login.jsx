@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import ReCAPTCHA from 'react-google-recaptcha';
-import { authApi } from '../../API/authApi';
+import { authApi } from '../../api/authAPI';
 import nitjLogo from '../../../assets/nitj_logo.png';
 
 export default function Login() {

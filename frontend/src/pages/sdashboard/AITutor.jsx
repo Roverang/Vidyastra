@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { studentAPI } from '../../API/studentAPI';
+import { studentAPI } from '../../api/studentAPI';
 
 // Topic Data mapping for efficiency
 const TOPICS_DATA = {

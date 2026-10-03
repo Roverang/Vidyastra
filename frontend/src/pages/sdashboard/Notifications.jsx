@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { studentAPI } from '../../API/studentAPI';
+import { studentAPI } from '../../api/studentAPI';
 
 export default function HelpSupport() {
   // FAQ Accordion State
