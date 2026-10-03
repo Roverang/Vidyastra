@@ -3,6 +3,9 @@ import ReCAPTCHA from 'react-google-recaptcha';
 import { authApi } from '../../api/authAPI';
 import nitjLogo from '../../../assets/nitj_logo.png';
 
+// Keep in sync with MIN_PASSWORD_LENGTH in backend/utils/password.js
+const MIN_PASSWORD_LENGTH = 8;
+
 export default function Login() {
   // Main Auth States
   const [email, setEmail] = useState('');
@@ -88,9 +91,9 @@ export default function Login() {
     setMessage('');
 
     try {
-      await authApi.sendOtp(forgotEmail);
+      const res = await authApi.sendOtp(forgotEmail);
       setViewMode('forgot_otp');
-      setMessage(`Verification OTP sent to ${forgotEmail}`);
+      setMessage(res.data?.message || 'If an account exists for this email, an OTP has been sent.');
     } catch (error) {
       console.error('Send OTP Error:', error);
       const errMsg = error.response?.data?.message || 'Failed to send OTP. Please check your email.';
@@ -135,8 +138,8 @@ export default function Login() {
     return;
   }
 
-  if (newPassword.length < 6) {
-    alert('Password must be at least 6 characters long.');
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    setMessage(`STATUS: Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
     return;
   }
 
@@ -392,7 +395,7 @@ export default function Login() {
                 </label>
                 <input
                   type="password"
-                  placeholder="Enter New Password"
+                  placeholder={`New Password (at least ${MIN_PASSWORD_LENGTH} characters)`}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required

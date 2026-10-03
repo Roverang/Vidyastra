@@ -4,10 +4,19 @@ const User = require('../models/userModel');
 const Otp = require('../models/otpModel'); // Ensure you have an OTP model created
 const { sendOTPEmail } = require('../services/otpService');
 const { signToken, signResetToken, verifyResetToken } = require('../utils/jwt');
+const { generateSalt, hashPassword, verifyPassword, validatePassword } = require('../utils/password');
+const { HIDE_SENSITIVE_USER_FIELDS } = require('../utils/userFields');
 
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_OTP_ATTEMPTS = 5;
-const MIN_PASSWORD_LENGTH = 6;
+
+// Same response whether the email is unknown or the password is wrong (no user enumeration)
+const INVALID_LOGIN_MESSAGE = 'Invalid email or password.';
+const OTP_SENT_MESSAGE = 'If an account exists for this email, an OTP has been sent.';
+
+// Login runs scrypt against this for unknown emails so both failure paths take about as long
+const DUMMY_SALT = generateSalt();
+const DUMMY_HASH = hashPassword(crypto.randomBytes(16).toString('hex'), DUMMY_SALT);
 
 const normalizeEmail = (email) => String(email).trim().toLowerCase();
 
@@ -17,18 +26,6 @@ const safeEqualStrings = (a, b) => {
   const bufB = Buffer.from(String(b));
   if (bufA.length !== bufB.length) return false;
   return crypto.timingSafeEqual(bufA, bufB);
-};
-
-const generateSalt = () => crypto.randomBytes(16).toString('hex');
-const hashPassword = (password, salt) => crypto.scryptSync(password, salt, 64).toString('hex');
-
-// Constant-time comparison of a password against the stored hex scrypt hash
-const verifyPassword = (password, salt, storedHash) => {
-  if (typeof password !== 'string' || typeof storedHash !== 'string' || !salt) return false;
-  const candidate = Buffer.from(hashPassword(password, salt), 'hex');
-  const stored = Buffer.from(storedHash, 'hex');
-  if (candidate.length !== stored.length) return false;
-  return crypto.timingSafeEqual(candidate, stored);
 };
 
 // Roles that may be chosen on the public registration form; admins are created out of band
@@ -41,6 +38,10 @@ exports.registerUser = async (req, res) => {
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email and password are required.' });
+    }
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      return res.status(400).json({ message: passwordError });
     }
 
     const normalizedRole = role === undefined || role === null || role === '' ? 'student' : String(role).trim().toLowerCase();
@@ -58,7 +59,7 @@ exports.registerUser = async (req, res) => {
 
     const newUser = new User({
       name,
-      email,
+      email: normalizeEmail(email),
       password: hashedPassword,
       salt,
       role: normalizedRole,
@@ -108,13 +109,14 @@ exports.loginUser = async (req, res) => {
 
     // 2. Validate User Credentials
     const user = await User.findOne({ email: normalizeEmail(email || '') });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
+    let isMatch = false;
+    if (user) {
+      isMatch = verifyPassword(password, user.salt, user.password);
+    } else {
+      verifyPassword(String(password ?? ''), DUMMY_SALT, DUMMY_HASH); // timing only; result ignored
     }
-
-    const isMatch = verifyPassword(password, user.salt, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials.' });
+      return res.status(401).json({ message: INVALID_LOGIN_MESSAGE });
     }
 
     const token = signToken(user);
@@ -130,8 +132,9 @@ exports.loginUser = async (req, res) => {
   }
 };
 
-// Send OTP (Stores email & OTP in a separate Otp collection without requiring prior user lookup)
-// Send OTP
+// Send OTP (email verification after sign-up, and password reset).
+// Always answers 200 with the same message so it cannot be used to discover which emails
+// have accounts; the OTP is only generated and emailed when the account exists.
 exports.sendOtp = async (req, res) => {
   try {
     const { email } = req.body;
@@ -141,25 +144,26 @@ exports.sendOtp = async (req, res) => {
 
     const normalizedEmail = normalizeEmail(email);
 
-    // Verify user exists before sending OTP
-    const user = await User.findOne({ email: normalizedEmail });
-    if (!user) {
-      return res.status(404).json({ message: 'No account found with this email address.' });
+    const user = await User.findOne({ email: normalizedEmail }).select('_id');
+    if (user) {
+      const otp = crypto.randomInt(100000, 1000000).toString();
+      const otpExpires = Date.now() + OTP_TTL_MS;
+
+      // A new OTP replaces any previous one and resets the wrong-attempt counter
+      await Otp.findOneAndUpdate(
+        { email: normalizedEmail },
+        { otp, otpExpires, attempts: 0 },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      // Not awaited: waiting on SMTP would make responses for existing accounts measurably
+      // slower than for unknown ones. Failures are logged server-side.
+      sendOTPEmail(normalizedEmail, otp).catch((error) => {
+        console.error('Failed to send OTP email:', error.message);
+      });
     }
 
-    const otp = crypto.randomInt(100000, 1000000).toString();
-    const otpExpires = Date.now() + OTP_TTL_MS;
-
-    // A new OTP replaces any previous one and resets the wrong-attempt counter
-    await Otp.findOneAndUpdate(
-      { email: normalizedEmail },
-      { otp, otpExpires, attempts: 0 },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    await sendOTPEmail(normalizedEmail, otp);
-
-    res.status(200).json({ message: 'OTP sent successfully to email.' });
+    res.status(200).json({ message: OTP_SENT_MESSAGE });
   } catch (error) {
     res.status(500).json({ message: 'Error sending OTP', error: error.message });
   }
@@ -224,8 +228,9 @@ exports.resetPassword = async (req, res) => {
     if (!resetToken) {
       return res.status(400).json({ message: 'Reset token is required. Verify the OTP sent to your email first.' });
     }
-    if (String(newPassword).length < MIN_PASSWORD_LENGTH) {
-      return res.status(400).json({ message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.` });
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      return res.status(400).json({ message: passwordError });
     }
 
     let payload;
@@ -266,7 +271,7 @@ exports.resetPassword = async (req, res) => {
 // Get User Profile
 exports.getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password -salt');
+    const user = await User.findById(req.user.id).select(HIDE_SENSITIVE_USER_FIELDS);
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }

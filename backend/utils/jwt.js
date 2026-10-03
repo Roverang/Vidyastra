@@ -2,15 +2,21 @@ const jwt = require('jsonwebtoken');
 
 const ALGORITHM = 'HS256';
 const MIN_SECRET_LENGTH = 32;
+// Must match the JWT_SECRET placeholder in backend/.env.example
+const PLACEHOLDER_SECRET = 'replace-with-at-least-32-random-characters';
 
 /**
- * Throws if JWT_SECRET is missing or too short. Called once at server start so a
- * misconfigured deployment fails immediately instead of on the first login.
+ * Throws if JWT_SECRET is missing, too short, or still the .env.example placeholder.
+ * Called once at server start so a misconfigured deployment fails immediately
+ * instead of on the first login.
  */
 const assertJwtConfig = () => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error('JWT_SECRET is not set. Add it to backend/.env (at least 32 random characters).');
+  }
+  if (secret === PLACEHOLDER_SECRET) {
+    throw new Error('JWT_SECRET is still the placeholder from .env.example. Replace it with at least 32 random characters.');
   }
   if (secret.length < MIN_SECRET_LENGTH) {
     throw new Error(`JWT_SECRET is too short (${secret.length} chars); it must be at least ${MIN_SECRET_LENGTH} characters.`);
