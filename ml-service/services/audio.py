@@ -1,16 +1,26 @@
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, Any
-from faster_whisper import WhisperModel
 from config import settings
-from utils.helper import save_json
+from utils.helper import save_json, require_package
 
 logger = logging.getLogger(__name__)
 
 class AudioService:
     def __init__(self):
-        logger.info(f"Loading Whisper model ({settings.WHISPER_MODEL_SIZE})...")
-        self.model = WhisperModel(settings.WHISPER_MODEL_SIZE, device="cpu", compute_type="int8")
+        self._model = None
+        self._lock = threading.Lock()
+
+    @property
+    def model(self):
+        if self._model is None:
+            with self._lock:
+                if self._model is None:
+                    faster_whisper = require_package("faster_whisper", "faster-whisper")
+                    logger.info(f"Loading Whisper model ({settings.WHISPER_MODEL_SIZE})...")
+                    self._model = faster_whisper.WhisperModel(settings.WHISPER_MODEL_SIZE, device="cpu", compute_type="int8")
+        return self._model
 
     def transcribe(self, audio_path: Path, lecture_id: str) -> Dict[str, Any]:
         segments_gen, info = self.model.transcribe(str(audio_path), beam_size=5)

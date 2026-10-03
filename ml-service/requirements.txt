@@ -24,8 +24,8 @@ accelerate==1.10.0
 huggingface-hub==0.34.4
 tokenizers==0.21.4
 
-google-genai
-truststore
+google-genai==2.28.0
+truststore==0.10.4
 
 torch>=2.7,<2.9
 
