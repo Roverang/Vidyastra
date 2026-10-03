@@ -1,6 +1,7 @@
 const User = require('../models/userModel');
+const jwt = require('../utils/jwt');
 
-// Verify Token via stored auth token
+// Verify JWT access token
 exports.verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
@@ -10,15 +11,35 @@ exports.verifyToken = async (req, res, next) => {
 
   const token = authHeader.split(' ')[1];
 
+  let payload;
   try {
-    const user = await User.findOne({ authToken: token });
+    payload = jwt.verifyToken(token);
+  } catch (error) {
+    const message = error.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token';
+    return res.status(401).json({ message });
+  }
+
+  // Special-purpose tokens (e.g. password reset) are never valid as access tokens
+  if (payload.purpose !== undefined) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+
+  try {
+    const user = await User.findById(payload.sub).select('role tokenVersion');
     if (!user) {
-      return res.status(403).json({ message: 'Invalid or expired token.' });
+      return res.status(401).json({ message: 'Invalid token: user no longer exists' });
+    }
+    if ((user.tokenVersion || 0) !== payload.tv) {
+      return res.status(401).json({ message: 'Token has been revoked. Please log in again.' });
     }
 
     req.user = { id: user._id, role: user.role.toLowerCase() }; // Attach user info to request object
     next();
   } catch (error) {
+    // e.g. a malformed `sub` that is not an ObjectId
+    if (error.name === 'CastError') {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
     res.status(500).json({ message: 'Error validating token', error: error.message });
   }
 };

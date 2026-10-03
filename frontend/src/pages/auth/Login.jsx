@@ -18,6 +18,7 @@ export default function Login() {
   const [otpInput, setOtpInput] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetToken, setResetToken] = useState(''); // Issued by verify-otp, required by reset-password
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -108,12 +109,16 @@ export default function Login() {
     setMessage('');
 
     try {
-      await authApi.verifyOtp({ email: forgotEmail, otp: otpInput.trim() });
+      const res = await authApi.verifyOtp({ email: forgotEmail, otp: otpInput.trim() });
+      if (!res.data?.resetToken) {
+        throw new Error('Server did not return a reset token. Please request a new OTP.');
+      }
+      setResetToken(res.data.resetToken);
       setViewMode('forgot_reset');
       setMessage('OTP Verified successfully. Enter your new password.');
     } catch (error) {
       console.error('Verify OTP Error:', error);
-      const errMsg = error.response?.data?.message || 'Invalid or expired OTP. Please try again.';
+      const errMsg = error.response?.data?.message || error.message || 'Invalid or expired OTP. Please try again.';
       setMessage(`STATUS: ${errMsg}`);
     } finally {
       setLoading(false);
@@ -124,8 +129,8 @@ export default function Login() {
  const handleResetPasswordSubmit = async (e) => {
   e.preventDefault();
 
-  if (!forgotEmail) {
-    setMessage('STATUS: Email is missing. Please start from step 1.');
+  if (!forgotEmail || !resetToken) {
+    setMessage('STATUS: Your verification is missing or expired. Please start from step 1.');
     setViewMode('forgot_email');
     return;
   }
@@ -144,11 +149,13 @@ export default function Login() {
   setMessage('');
 
   try {
-    const res = await authApi.resetPassword({ 
-      email: forgotEmail, 
-      newPassword: newPassword 
+    await authApi.resetPassword({
+      email: forgotEmail,
+      newPassword: newPassword,
+      resetToken,
     });
-    
+
+    setResetToken(''); // single-use
     alert('Password reset successfully! Please log in.');
     setViewMode('login');
     setEmail(forgotEmail);

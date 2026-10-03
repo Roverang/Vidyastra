@@ -2,6 +2,15 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
+const { assertJwtConfig } = require('./utils/jwt');
+
+// Fail fast if JWT configuration is missing or weak
+try {
+  assertJwtConfig();
+} catch (error) {
+  console.error(`Startup aborted: ${error.message}`);
+  process.exit(1);
+}
 
 // Connect to MongoDB
 connectDB();

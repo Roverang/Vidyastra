@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, lowercase: true },
     password: { type: String, required: true },
     salt: { type: String, required: true },
-    authToken: { type: String, default: null },
+    tokenVersion: { type: Number, default: 0 },
     role: { type: String, enum: ['admin', 'faculty', 'student'], default: 'student' },
     otp: { type: String, default: null },
     otpExpires: { type: Date, default: null },
