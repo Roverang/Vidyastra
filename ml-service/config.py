@@ -1,16 +1,34 @@
 import os
 from pathlib import Path
+from typing import Literal
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    LLM_MODEL_NAME: str = "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF"
+    LLM_PROVIDER: Literal["gemini", "ollama"] = "gemini"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-3.8-flash"
+    GEMINI_FALLBACK_MODEL: str = "gemini-3.5-flash-lite"
+    LOCAL_LLM_FALLBACK: bool = True
+    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen2.5:3b"
+    LLM_TIMEOUT_SECONDS: int = 120
+
     WHISPER_MODEL_SIZE: str = "base"
     EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
+    # Load HuggingFace models from the local cache only (no network checks); see export below.
+    HF_HUB_OFFLINE: bool = False
 
     SCENE_SIMILARITY_THRESHOLD: float = 0.85
     OCR_CONFIDENCE_THRESHOLD: float = 0.60
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 100
+    # Retrieved chunks farther than this (squared L2 on unit vectors = 2 - 2*cosine) are treated as
+    # unrelated. Chosen from scripts/measure_relevance.py: on-topic best matches 0.52-0.58,
+    # off-topic best matches >= 0.79 (6 chunks / 1 lecture; re-measure as more lectures are indexed).
+    RELEVANCE_MAX_DISTANCE: float = 0.70
+
+    # Full path to the ffmpeg executable; empty means look up "ffmpeg" on PATH.
+    FFMPEG_PATH: str = ""
 
     BASE_DIR: Path = Path(__file__).resolve().parent
     STORAGE_DIR: Path = BASE_DIR / "storage"
@@ -37,3 +55,10 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
+
+# huggingface_hub reads HF_HUB_OFFLINE from the process environment when it is first imported, and
+# pydantic-settings does not export .env values there. Every HF import (sentence-transformers,
+# faster-whisper) is lazy and happens after this module loads, so exporting it here makes the .env
+# value take effect. A value already set in the shell wins.
+if settings.HF_HUB_OFFLINE:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")

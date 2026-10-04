@@ -1,31 +1,36 @@
 const { getAINotesResponseFromML } = require('../../services/mlService');
 
-// Fetch or generate AI notes via ML service
+const optionalString = (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
+
+// Generate Markdown revision notes from the indexed lectures via the ML service
 exports.generateOrFetchNotes = async (req, res) => {
   try {
-    const { topic, course } = req.body;
+    const { topic, subject, lecture_id: lectureId } = req.body;
 
-    if (!topic) {
+    if (typeof topic !== 'string' || !topic.trim()) {
       return res.status(400).json({
         success: false,
         message: 'Topic keyword is required to generate AI revision notes.',
       });
     }
 
-    // Communicate strictly with the ML service
-    const notesData = await getAINotesResponseFromML({
-      topic,
-      course: course || 'General Studies',
+    const { notes, sources } = await getAINotesResponseFromML({
+      topic: topic.trim(),
+      subject: optionalString(subject),
+      lecture_id: optionalString(lectureId),
     });
 
     res.status(200).json({
       success: true,
-      data: notesData,
+      data: { topic: topic.trim(), notes },
+      sources,
     });
   } catch (error) {
-    res.status(502).json({
+    console.error('AI Notes request failed:', error);
+    res.status(error.status || 500).json({
       success: false,
-      message: 'ML Service communication error. Please ensure the AI microservice is active.',
+      // e.g. "No indexed lecture covers 'X' yet." straight from the ML service
+      message: typeof error.detail === 'string' ? error.detail : error.message,
       error: error.message,
     });
   }

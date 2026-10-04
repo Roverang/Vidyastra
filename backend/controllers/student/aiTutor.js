@@ -13,7 +13,7 @@ exports.handleAITutorChat = async (req, res) => {
     }
 
     // Communicate strictly with the ML service
-    const reply = await getAITutorResponseFromML({
+    const { reply, sources } = await getAITutorResponseFromML({
       message,
       subject: subject || 'General',
       topic: topic || 'General',
@@ -22,11 +22,13 @@ exports.handleAITutorChat = async (req, res) => {
     res.status(200).json({
       success: true,
       reply,
+      sources,
     });
   } catch (error) {
-    res.status(502).json({
+    console.error('AI Tutor request failed:', error);
+    res.status(error.status || 500).json({
       success: false,
-      message: 'ML Service communication error. Please ensure the AI microservice is active.',
+      message: error.message,
       error: error.message,
     });
   }

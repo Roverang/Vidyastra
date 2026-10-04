@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { studentAPI } from '../../API/studentAPI';
+import { studentAPI } from '../../api/studentAPI';
 
 // Topic Data mapping for efficiency
 const TOPICS_DATA = {
@@ -84,26 +84,29 @@ export default function AITutor() {
     setError(null);
 
     try {
-      const res = await studentAPI.askAITutor({
+      const res = await studentAPI.sendAiTutorMessage({
         message: query,
         subject: selectedSubject,
         topic: selectedTopic,
       });
 
-      const aiReply = res.data?.reply || res.reply;
+      const aiReply = res.data?.reply;
       if (!aiReply) {
-        throw new Error('Invalid response structure from server.');
+        throw new Error(`Invalid response structure from server: ${JSON.stringify(res.data)}`);
       }
 
       const aiMsg = {
         id: Date.now() + 1,
         sender: 'ai',
         text: aiReply,
+        sources: res.data?.sources || [],
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
       console.error('Error communicating with AI Tutor API:', err);
-      setError('Failed to fetch response from AI Tutor. Please check your connection or backend server.');
+      const data = err.response?.data;
+      const reason = data?.message || data?.error || err.message;
+      setError(err.response ? `AI Tutor error (${err.response.status}): ${reason}` : `AI Tutor request failed: ${reason}`);
     } finally {
       setLoading(false);
     }
@@ -215,6 +218,26 @@ export default function AITutor() {
                 }`}
               >
                 {msg.text}
+
+                {msg.sender === 'ai' && msg.sources?.length > 0 && (
+                  <div className="mt-3 pt-2 border-t border-slate-200 space-y-1.5 whitespace-normal">
+                    <span className="text-[10px] font-extrabold uppercase text-indigo-600 tracking-wider">
+                      📚 Sources
+                    </span>
+                    {msg.sources.map((src, idx) => (
+                      <details
+                        key={`${src.lecture_id}-${src.chunk_index}-${idx}`}
+                        className="bg-white border border-slate-100 rounded-xl px-2.5 py-1.5"
+                      >
+                        <summary className="cursor-pointer text-[11px] font-bold text-slate-700">
+                          {src.lecture_title || 'Untitled lecture'}
+                          <span className="ml-1 text-slate-400 font-medium">· part {Number(src.chunk_index) + 1}</span>
+                        </summary>
+                        <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">{src.excerpt}…</p>
+                      </details>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {msg.sender === 'user' && (

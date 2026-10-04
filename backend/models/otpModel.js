@@ -17,6 +17,11 @@ const otpSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Wrong guesses so far; the OTP is invalidated after MAX_OTP_ATTEMPTS
+  attempts: {
+    type: Number,
+    default: 0
+  },
   otpExpires: {
     type: Date,
     required: true,

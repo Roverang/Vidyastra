@@ -1,7 +1,10 @@
 import React, { useState, useRef } from 'react';
 import ReCAPTCHA from 'react-google-recaptcha';
-import { authApi } from '../../API/authApi';
+import { authApi } from '../../api/authAPI';
 import nitjLogo from '../../../assets/nitj_logo.png';
+
+// Keep in sync with MIN_PASSWORD_LENGTH in backend/utils/password.js
+const MIN_PASSWORD_LENGTH = 8;
 
 export default function Login() {
   // Main Auth States
@@ -18,6 +21,7 @@ export default function Login() {
   const [otpInput, setOtpInput] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetToken, setResetToken] = useState(''); // Issued by verify-otp, required by reset-password
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -87,9 +91,9 @@ export default function Login() {
     setMessage('');
 
     try {
-      await authApi.sendOtp(forgotEmail);
+      const res = await authApi.sendOtp(forgotEmail);
       setViewMode('forgot_otp');
-      setMessage(`Verification OTP sent to ${forgotEmail}`);
+      setMessage(res.data?.message || 'If an account exists for this email, an OTP has been sent.');
     } catch (error) {
       console.error('Send OTP Error:', error);
       const errMsg = error.response?.data?.message || 'Failed to send OTP. Please check your email.';
@@ -108,12 +112,16 @@ export default function Login() {
     setMessage('');
 
     try {
-      await authApi.verifyOtp({ email: forgotEmail, otp: otpInput.trim() });
+      const res = await authApi.verifyOtp({ email: forgotEmail, otp: otpInput.trim() });
+      if (!res.data?.resetToken) {
+        throw new Error('Server did not return a reset token. Please request a new OTP.');
+      }
+      setResetToken(res.data.resetToken);
       setViewMode('forgot_reset');
       setMessage('OTP Verified successfully. Enter your new password.');
     } catch (error) {
       console.error('Verify OTP Error:', error);
-      const errMsg = error.response?.data?.message || 'Invalid or expired OTP. Please try again.';
+      const errMsg = error.response?.data?.message || error.message || 'Invalid or expired OTP. Please try again.';
       setMessage(`STATUS: ${errMsg}`);
     } finally {
       setLoading(false);
@@ -124,14 +132,14 @@ export default function Login() {
  const handleResetPasswordSubmit = async (e) => {
   e.preventDefault();
 
-  if (!forgotEmail) {
-    setMessage('STATUS: Email is missing. Please start from step 1.');
+  if (!forgotEmail || !resetToken) {
+    setMessage('STATUS: Your verification is missing or expired. Please start from step 1.');
     setViewMode('forgot_email');
     return;
   }
 
-  if (newPassword.length < 6) {
-    alert('Password must be at least 6 characters long.');
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    setMessage(`STATUS: Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
     return;
   }
 
@@ -144,11 +152,13 @@ export default function Login() {
   setMessage('');
 
   try {
-    const res = await authApi.resetPassword({ 
-      email: forgotEmail, 
-      newPassword: newPassword 
+    await authApi.resetPassword({
+      email: forgotEmail,
+      newPassword: newPassword,
+      resetToken,
     });
-    
+
+    setResetToken(''); // single-use
     alert('Password reset successfully! Please log in.');
     setViewMode('login');
     setEmail(forgotEmail);
@@ -385,7 +395,7 @@ export default function Login() {
                 </label>
                 <input
                   type="password"
-                  placeholder="Enter New Password"
+                  placeholder={`New Password (at least ${MIN_PASSWORD_LENGTH} characters)`}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required

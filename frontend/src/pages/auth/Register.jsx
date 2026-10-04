@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { authApi } from '../../API/authApi';
+import { authApi } from '../../api/authAPI';
 import nitjLogo from '../../../assets/nitj_logo.png'; // Update with your actual image path
 
+// Keep in sync with MIN_PASSWORD_LENGTH in backend/utils/password.js
+const MIN_PASSWORD_LENGTH = 8;
+
 export default function Register() {
-  // Step Flow State: 'email' | 'otp' | 'details'
-  const [step, setStep] = useState('email');
+  // Step Flow State: 'details' (create account) -> 'otp' (optional email verification)
+  const [step, setStep] = useState('details');
 
   // Form Data States
   const [role, setRole] = useState('Student');
@@ -18,54 +21,26 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // STEP 1: Send OTP to Email
-  const handleSendOtp = async (e) => {
-    e.preventDefault();
-    if (!email.trim()) return;
+  const goToLogin = () => { window.location.href = '/login'; };
 
-    setLoading(true);
-    setMessage('');
-
+  // Sends the verification OTP for the (now existing) account
+  const sendVerificationOtp = async () => {
     try {
       await authApi.sendOtp(email.trim());
-      setStep('otp');
-      setMessage(`Verification OTP sent to ${email.trim()}`);
+      setMessage(`Account created. A verification OTP has been sent to ${email.trim()}.`);
     } catch (error) {
       console.error('Send OTP Error:', error);
-      const errMsg = error.response?.data?.message || 'Failed to send OTP. Please check your email.';
-      setMessage(`STATUS: ${errMsg}`);
-    } finally {
-      setLoading(false);
+      const errMsg = error.response?.data?.message || 'Could not send the verification OTP.';
+      setMessage(`STATUS: Account created, but ${errMsg} You can resend it or log in now.`);
     }
   };
 
-  // STEP 2: Verify OTP
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault();
-    if (!otpInput.trim()) return;
-
-    setLoading(true);
-    setMessage('');
-
-    try {
-      await authApi.verifyOtp({ email: email.trim(), otp: otpInput.trim() });
-      setStep('details');
-      setMessage('Email verified successfully. Complete details below.');
-    } catch (error) {
-      console.error('Verify OTP Error:', error);
-      const errMsg = error.response?.data?.message || 'Invalid or expired OTP. Try again.';
-      setMessage(`STATUS: ${errMsg}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // STEP 3: Complete Account Registration
-  const handleFinalRegisterSubmit = async (e) => {
+  // STEP 1: Create the account
+  const handleRegisterSubmit = async (e) => {
     e.preventDefault();
 
-    if (password.length < 6) {
-      setMessage('STATUS: Password must be at least 6 characters long');
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setMessage(`STATUS: Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
       return;
     }
 
@@ -84,9 +59,8 @@ export default function Register() {
         password,
         role: role.toLowerCase(),
       });
-
-      alert('Registration successful! Redirecting to login page...');
-      window.location.href = '/login';
+      setStep('otp');
+      await sendVerificationOtp();
     } catch (error) {
       console.error('Registration error:', error);
       const errMsg = error.response?.data?.message || 'Failed to create account. Try again.';
@@ -94,6 +68,34 @@ export default function Register() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // STEP 2: Verify email (optional; login does not require it)
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (!otpInput.trim()) return;
+
+    setLoading(true);
+    setMessage('');
+
+    try {
+      await authApi.verifyOtp({ email: email.trim(), otp: otpInput.trim() });
+      alert('Email verified! Redirecting to login page...');
+      goToLogin();
+    } catch (error) {
+      console.error('Verify OTP Error:', error);
+      const errMsg = error.response?.data?.message || 'Invalid or expired OTP. Try again.';
+      setMessage(`STATUS: ${errMsg}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setLoading(true);
+    setMessage('');
+    await sendVerificationOtp();
+    setLoading(false);
   };
 
   return (
@@ -159,9 +161,9 @@ export default function Register() {
             </div>
           )}
 
-          {/* STEP 1: EMAIL & ACCOUNT TYPE INPUT */}
-          {step === 'email' && (
-            <form onSubmit={handleSendOtp} className="space-y-4">
+          {/* STEP 1: ACCOUNT TYPE, EMAIL, NAME & PASSWORDS -> creates the account */}
+          {step === 'details' && (
+            <form onSubmit={handleRegisterSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#003366] mb-1">
                   Account Type:
@@ -198,19 +200,61 @@ export default function Register() {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-[#003366] mb-1">
+                  Full Name:
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter Full Name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#337ab7]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#003366] mb-1">
+                  Create Password:
+                </label>
+                <input
+                  type="password"
+                  placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#337ab7]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#003366] mb-1">
+                  Confirm Password:
+                </label>
+                <input
+                  type="password"
+                  placeholder="Confirm Password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#337ab7]"
+                />
+              </div>
+
               <button
                 type="submit"
                 disabled={loading}
                 className="w-full py-2.5 bg-[#337ab7] hover:bg-[#286090] text-white font-bold text-sm rounded transition disabled:opacity-50 mt-2"
               >
-                {loading ? 'Sending OTP...' : 'Send Verification OTP'}
+                {loading ? 'Creating Account...' : 'Create Account'}
               </button>
 
               <div className="text-center pt-2 text-xs border-t border-gray-100 text-gray-600">
                 Already registered?{' '}
                 <button
                   type="button"
-                  onClick={() => { window.location.href = '/login'; }}
+                  onClick={goToLogin}
                   className="text-[#337ab7] font-bold hover:underline"
                 >
                   Sign In
@@ -241,74 +285,26 @@ export default function Register() {
                 disabled={loading}
                 className="w-full py-2.5 bg-[#337ab7] hover:bg-[#286090] text-white font-bold text-sm rounded transition disabled:opacity-50"
               >
-                {loading ? 'Verifying...' : 'Verify OTP Code'}
+                {loading ? 'Verifying...' : 'Verify Email'}
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('email');
-                  setMessage('');
-                }}
-                className="w-full text-xs text-red-600 hover:underline text-center block pt-1"
-              >
-                Change Email Address
-              </button>
-            </form>
-          )}
-
-          {/* STEP 3: FULL NAME & PASSWORDS DETAILS */}
-          {step === 'details' && (
-            <form onSubmit={handleFinalRegisterSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#003366] mb-1">
-                  Full Name:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter Full Name"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#337ab7]"
-                />
+              <div className="flex justify-between pt-1 text-xs">
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={loading}
+                  className="text-[#337ab7] hover:underline disabled:opacity-50"
+                >
+                  Resend OTP
+                </button>
+                <button
+                  type="button"
+                  onClick={goToLogin}
+                  className="text-gray-600 hover:underline"
+                >
+                  Skip for now, go to Login
+                </button>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#003366] mb-1">
-                  Create Password:
-                </label>
-                <input
-                  type="password"
-                  placeholder="Enter Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#337ab7]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#003366] mb-1">
-                  Confirm Password:
-                </label>
-                <input
-                  type="password"
-                  placeholder="Confirm Password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#337ab7]"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 bg-[#337ab7] hover:bg-[#286090] text-white font-bold text-sm rounded transition disabled:opacity-50 mt-2"
-              >
-                {loading ? 'Registering...' : 'Complete Registration'}
-              </button>
             </form>
           )}
 

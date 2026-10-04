@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { authApi } from '../../API/authApi';
+import { authApi } from '../../api/authAPI';
 
 export default function ProfileSettings() {
   // Clean Initial User Profile State (No hardcoded mock data)
