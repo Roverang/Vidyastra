@@ -6,11 +6,14 @@ except ImportError:
     pass
 
 import logging
+import threading
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 
 from routes import video, notes, quiz, assignment, flashcard, tutor
+from services.vectordb import vectordb_service
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -29,10 +32,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def _warm_up_vectordb():
+    # Runs in a background thread: a failure is logged and the model then loads on first use instead.
+    start = time.perf_counter()
+    try:
+        vectordb_service.warm_up()
+    except Exception:
+        logger.exception("warm-up failed after %.1fs; the embedding model will load on the first request", time.perf_counter() - start)
+        return
+    logger.info("warm-up complete in %.1fs", time.perf_counter() - start)
+
 @app.on_event("startup")
 def startup_event():
     logger.info("Verifying and creating storage layout directories...")
     settings.ensure_directories()
+    # Not awaited, so /health responds immediately while the model loads.
+    logger.info("Warming up embedding model and Chroma collection in the background...")
+    threading.Thread(target=_warm_up_vectordb, name="vectordb-warm-up", daemon=True).start()
 
 # Register modular routes
 app.include_router(video.router)

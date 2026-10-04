@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     WHISPER_MODEL_SIZE: str = "base"
     EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
+    # Load HuggingFace models from the local cache only (no network checks); see export below.
+    HF_HUB_OFFLINE: bool = False
 
     SCENE_SIMILARITY_THRESHOLD: float = 0.85
     OCR_CONFIDENCE_THRESHOLD: float = 0.60
@@ -24,6 +26,9 @@ class Settings(BaseSettings):
     # unrelated. Chosen from scripts/measure_relevance.py: on-topic best matches 0.52-0.58,
     # off-topic best matches >= 0.79 (6 chunks / 1 lecture; re-measure as more lectures are indexed).
     RELEVANCE_MAX_DISTANCE: float = 0.70
+
+    # Full path to the ffmpeg executable; empty means look up "ffmpeg" on PATH.
+    FFMPEG_PATH: str = ""
 
     BASE_DIR: Path = Path(__file__).resolve().parent
     STORAGE_DIR: Path = BASE_DIR / "storage"
@@ -50,3 +55,10 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
+
+# huggingface_hub reads HF_HUB_OFFLINE from the process environment when it is first imported, and
+# pydantic-settings does not export .env values there. Every HF import (sentence-transformers,
+# faster-whisper) is lazy and happens after this module loads, so exporting it here makes the .env
+# value take effect. A value already set in the shell wins.
+if settings.HF_HUB_OFFLINE:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")

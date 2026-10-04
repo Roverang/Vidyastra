@@ -39,6 +39,12 @@ class VectorDBService:
                     self._collection = self._client.get_or_create_collection(name=COLLECTION_NAME)
         return self._collection
 
+    def warm_up(self) -> None:
+        """Loads the Chroma collection and embedding model and runs one encode, so the first
+        real request does not pay the multi-second load cost."""
+        _ = self.collection
+        self._embed(["warm-up"])
+
     def _embed(self, texts: List[str]) -> List[List[float]]:
         # The model ends in a Normalize layer, so vectors are unit length and Chroma's squared L2
         # distance is 2 - 2 * cosine similarity (0 = identical, 2 = opposite).
